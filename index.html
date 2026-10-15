@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Groupies</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #171a21;
+        --tile: #1f242e;
+        --text: #e7ecf3;
+        --muted: #8b93a1;
+        --accent: #4f7cff;
+        --danger: #e5484d;
+        --ok: #38c172;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; height: 100vh; display: flex; flex-direction: column;
+        background: var(--bg); color: var(--text);
+        font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        user-select: none; overflow: hidden;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 16px; background: var(--panel); border-bottom: 1px solid #000;
+      }
+      header .brand { font-weight: 700; letter-spacing: 0.3px; }
+      header .meeting { color: var(--muted); font-size: 12px; }
+      #shieldPill {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 12px; border-radius: 999px; background: var(--tile); font-size: 12px;
+      }
+      #shieldDot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: background .2s; }
+      #shieldDot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+
+      .body { flex: 1; display: flex; min-height: 0; }
+      main {
+        flex: 1; display: grid; grid-template-columns: repeat(2, 1fr);
+        grid-auto-rows: 1fr; gap: 12px; padding: 16px; overflow: auto;
+      }
+      .tile {
+        background: var(--tile); border-radius: 14px; display: flex;
+        align-items: center; justify-content: center; position: relative; min-height: 160px;
+      }
+      .tile .avatar {
+        width: 72px; height: 72px; border-radius: 50%;
+        background: linear-gradient(135deg, #3a4254, #262c3a);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 26px; font-weight: 700;
+      }
+      .tile .name {
+        position: absolute; left: 12px; bottom: 10px; font-size: 12px;
+        background: rgba(0,0,0,.45); padding: 3px 8px; border-radius: 6px;
+      }
+      .tile.self { outline: 2px solid var(--accent); }
+
+      /* --- Assistant panel --- */
+      #assistant {
+        width: 360px; flex: 0 0 360px; background: var(--panel);
+        border-left: 1px solid #000; display: flex; flex-direction: column;
+        transition: margin-right .2s ease;
+      }
+      #assistant.hidden { margin-right: -360px; }
+      .asst-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 14px; border-bottom: 1px solid #000;
+      }
+      .asst-head .title { font-weight: 600; }
+      .asst-head .sub { color: var(--muted); font-size: 11px; }
+      .asst-head button { background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+      #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; user-select: text; }
+      .msg { max-width: 85%; padding: 8px 11px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; font-size: 13px; }
+      .msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+      .msg.assistant { align-self: flex-start; background: var(--tile); border-bottom-left-radius: 4px; }
+      .msg.error { align-self: stretch; background: #3a2023; color: #ffb4b4; font-size: 12px; }
+      .msg.assistant.pending::after { content: '▋'; animation: blink 1s steps(2) infinite; color: var(--muted); }
+      @keyframes blink { 50% { opacity: 0; } }
+      .asst-input { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #000; }
+      .asst-input textarea {
+        flex: 1; resize: none; height: 40px; max-height: 120px; padding: 9px 11px;
+        background: var(--tile); color: var(--text); border: 1px solid #2a3140;
+        border-radius: 10px; font: inherit; user-select: text;
+      }
+      .asst-input textarea:focus { outline: none; border-color: var(--accent); }
+      .asst-input button {
+        border: none; border-radius: 10px; padding: 0 16px; font-weight: 600;
+        cursor: pointer; background: var(--accent); color: #fff;
+      }
+      .asst-input button:disabled { opacity: .5; cursor: default; }
+      .asst-input button.stop { background: var(--danger); }
+
+      footer {
+        display: flex; align-items: center; justify-content: center; gap: 10px;
+        padding: 14px; background: var(--panel); border-top: 1px solid #000;
+      }
+      button.ctrl {
+        display: inline-flex; flex-direction: column; align-items: center; gap: 4px;
+        min-width: 76px; padding: 10px 12px; border: none; border-radius: 12px;
+        background: var(--tile); color: var(--text); font-size: 11px; cursor: pointer;
+        transition: transform .08s, background .15s;
+      }
+      button.ctrl:hover { background: #2a3140; }
+      button.ctrl:active { transform: translateY(1px); }
+      button.ctrl .ico { font-size: 18px; }
+      button.leave { background: var(--danger); }
+      button.shield.on { background: var(--ok); color: #06240f; }
+      button.assist.on { background: var(--accent); color: #fff; }
+      .hint { color: var(--muted); font-size: 11px; margin-left: 14px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <span class="brand">● Groupies</span>
+        <span class="meeting">&nbsp;&nbsp;Team sync · 00:12:48</span>
+      </div>
+      <div id="shieldPill">
+        <span id="shieldDot"></span>
+        <span id="shieldLabel">Visible in screen share</span>
+      </div>
+    </header>
+
+    <div class="body">
+      <main id="grid">
+        <div class="tile self"><div class="avatar">You</div><div class="name">You (host)</div></div>
+        <div class="tile"><div class="avatar">A</div><div class="name">Ana</div></div>
+        <div class="tile"><div class="avatar">M</div><div class="name">Marco</div></div>
+        <div class="tile"><div class="avatar">P</div><div class="name">Priya</div></div>
+      </main>
+
+      <aside id="assistant" class="hidden">
+        <div class="asst-head">
+          <div>
+            <div class="title">Support Assistant</div>
+            <div class="sub" id="asstModel">local model</div>
+          </div>
+          <button id="asstClose" title="Close">×</button>
+        </div>
+        <div id="messages">
+          <div class="msg assistant">Hi! I'm your in-call assistant. Ask me anything about using Groupies.</div>
+        </div>
+        <div class="asst-input">
+          <textarea id="asstInput" placeholder="Type a message…  (Enter to send)"></textarea>
+          <button id="asstSend">Send</button>
+        </div>
+      </aside>
+    </div>
+
+    <footer>
+      <button class="ctrl"><span class="ico">🎙️</span>Mute</button>
+      <button class="ctrl"><span class="ico">🎥</span>Camera</button>
+      <button class="ctrl"><span class="ico">🖥️</span>Share</button>
+      <button class="ctrl shield" id="shieldBtn"><span class="ico">🛡️</span><span id="shieldBtnLabel">Hide from share</span></button>
+      <button class="ctrl assist" id="assistBtn"><span class="ico">💬</span>Assistant</button>
+      <button class="ctrl leave"><span class="ico">⏻</span>Leave</button>
+      <span class="hint">Shield: Ctrl/Cmd+Shift+P</span>
+    </footer>
+
+    <script>
+      // ---------- capture protection UI ----------
+      const shieldBtn = document.getElementById('shieldBtn');
+      const shieldBtnLabel = document.getElementById('shieldBtnLabel');
+      const dot = document.getElementById('shieldDot');
+      const pillLabel = document.getElementById('shieldLabel');
+
+      function renderShield(on) {
+        dot.classList.toggle('on', on);
+        shieldBtn.classList.toggle('on', on);
+        shieldBtnLabel.textContent = on ? 'Hidden' : 'Hide from share';
+        pillLabel.textContent = on ? 'Hidden from screen share / recording' : 'Visible in screen share';
+      }
+      shieldBtn.addEventListener('click', async () => {
+        const applied = await window.groupies.setCaptureProtection(!dot.classList.contains('on'));
+        renderShield(applied);
+      });
+      window.groupies.onProtectionChanged(renderShield);
+      window.groupies.onRdpStatus((onRdp) => {
+        if (onRdp) { pillLabel.textContent = 'RDP session — protection unavailable'; shieldBtn.disabled = true; shieldBtn.style.opacity = .5; }
+      });
+
+      // ---------- assistant UI ----------
+      const panel = document.getElementById('assistant');
+      const assistBtn = document.getElementById('assistBtn');
+      const closeBtn = document.getElementById('asstClose');
+      const messagesEl = document.getElementById('messages');
+      const input = document.getElementById('asstInput');
+      const sendBtn = document.getElementById('asstSend');
+      const modelLabel = document.getElementById('asstModel');
+
+      // Conversation history sent to the model (system prompt is added in main).
+      const history = [];
+      let currentRequestId = null;   // the stream we're currently receiving
+      let pendingBubble = null;      // the assistant bubble being filled
+      let pendingText = '';
+
+      window.groupies.ai.onConfig(({ model }) => { if (model) modelLabel.textContent = model; });
+
+      function togglePanel(show) {
+        panel.classList.toggle('hidden', !show);
+        assistBtn.classList.toggle('on', show);
+        if (show) input.focus();
+      }
+      assistBtn.addEventListener('click', () => togglePanel(panel.classList.contains('hidden')));
+      closeBtn.addEventListener('click', () => togglePanel(false));
+
+      function addBubble(cls, text) {
+        const el = document.createElement('div');
+        el.className = 'msg ' + cls;
+        el.textContent = text; // textContent => no HTML injection from model/user
+        messagesEl.appendChild(el);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return el;
+      }
+
+      function setStreaming(isStreaming) {
+        if (isStreaming) {
+          sendBtn.textContent = 'Stop';
+          sendBtn.classList.add('stop');
+        } else {
+          sendBtn.textContent = 'Send';
+          sendBtn.classList.remove('stop');
+          sendBtn.disabled = false;
+        }
+      }
+
+      async function send() {
+        // If a stream is running, the button acts as "Stop".
+        if (currentRequestId) {
+          window.groupies.ai.cancel(currentRequestId);
+          return;
+        }
+        const text = input.value.trim();
+        if (!text) return;
+
+        input.value = '';
+        addBubble('user', text);
+        history.push({ role: 'user', content: text });
+
+        pendingText = '';
+        pendingBubble = addBubble('assistant pending', '');
+
+        const res = await window.groupies.ai.send(history);
+        if (!res || res.error) {
+          pendingBubble.className = 'msg error';
+          pendingBubble.textContent = res?.error || 'Could not start the request.';
+          pendingBubble = null;
+          return;
+        }
+        currentRequestId = res.requestId;
+        setStreaming(true);
+      }
+
+      function finishStream() {
+        currentRequestId = null;
+        pendingBubble = null;
+        pendingText = '';
+        setStreaming(false);
+        input.focus();
+      }
+
+      window.groupies.ai.onChunk(({ requestId, delta }) => {
+        if (requestId !== currentRequestId || !pendingBubble) return;
+        pendingBubble.classList.remove('pending');
+        pendingText += delta;
+        pendingBubble.textContent = pendingText;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      });
+
+      window.groupies.ai.onDone(({ requestId, text }) => {
+        if (requestId !== currentRequestId) return;
+        if (pendingBubble) {
+          pendingBubble.classList.remove('pending');
+          const finalText = pendingText || text || '(no response)';
+          pendingBubble.textContent = finalText;
+          history.push({ role: 'assistant', content: finalText });
+        }
+        finishStream();
+      });
+
+      window.groupies.ai.onError(({ requestId, message }) => {
+        if (requestId !== currentRequestId) return;
+        if (pendingBubble) { pendingBubble.className = 'msg error'; pendingBubble.textContent = message; }
+        // Drop the unanswered user turn so retries aren't polluted.
+        if (history.length && history[history.length - 1].role === 'user') history.pop();
+        finishStream();
+      });
+
+      sendBtn.addEventListener('click', send);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+      });
+    </script>
+  </body>
+</html>

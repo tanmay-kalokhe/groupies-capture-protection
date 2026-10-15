@@ -1,0 +1,12 @@
+{
+  "name": "groupies-capture-protection",
+  "version": "1.0.0",
+  "description": "Demo: per-window 'hide from screen share/recording' toggle for a Groupies-style video call app.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
