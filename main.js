@@ -25,8 +25,8 @@ const { app, BrowserWindow, globalShortcut, ipcMain } = require('electron');
 //              Ollama example: "gemma3n:e4b"   LM Studio: whatever it lists.
 //  Override without editing code via env vars GROUPIES_AI_BASE_URL / _MODEL.
 const AI_CONFIG = {
-  baseUrl: (process.env.GROUPIES_AI_BASE_URL || 'http://192.168.1.50:11434/v1').replace(/\/+$/, ''),
-  model: process.env.GROUPIES_AI_MODEL || 'gemma3n:e4b',
+  baseUrl: (process.env.GROUPIES_AI_BASE_URL || 'http://localhost:1234/v1').replace(/\/+$/, ''),
+  model: process.env.GROUPIES_AI_MODEL || 'gemma-4-e4b-it-ultra-uncensored-heretic',
   apiKey: process.env.GROUPIES_AI_API_KEY || 'not-needed', // local servers ignore it
   temperature: 0.4,
   requestTimeoutMs: 120000,
@@ -153,7 +153,13 @@ function describeAiError(err) {
 async function streamAiCompletion(requestId, messages) {
   const controller = new AbortController();
   activeAiRequests.set(requestId, controller);
-  const timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
+  // Idle timeout: restarted whenever data arrives, so a long but still-active
+  // answer (slow local model, long reasoning) is not cut off mid-stream.
+  let timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
+  const resetTimeout = () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
+  };
 
   let full = '';
   try {
@@ -196,29 +202,39 @@ async function streamAiCompletion(requestId, messages) {
     // Server-Sent Events: lines like  data: {json}\n\n  ending with data: [DONE]
     const decoder = new TextDecoder();
     let buffer = '';
+    // Handle one SSE line. Returns true on the [DONE] sentinel.
+    const handleLine = (rawLine) => {
+      const line = rawLine.trim();
+      if (!line.startsWith('data:')) return false;
+      const payload = line.slice(5).trim();
+      if (payload === '') return false;
+      if (payload === '[DONE]') return true;
+      let json;
+      try {
+        json = JSON.parse(payload);
+      } catch {
+        return false; // skip a partial/garbled SSE frame rather than crash
+      }
+      const delta = json?.choices?.[0]?.delta?.content;
+      if (typeof delta === 'string' && delta.length) {
+        full += delta;
+        safeSend('ai-chat-chunk', { requestId, delta });
+      }
+      return false;
+    };
     for await (const bytes of response.body) {
+      resetTimeout();
       buffer += decoder.decode(bytes, { stream: true });
       let nl;
       while ((nl = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, nl).trim();
+        const line = buffer.slice(0, nl);
         buffer = buffer.slice(nl + 1);
-        if (!line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (payload === '' ) continue;
-        if (payload === '[DONE]') { buffer = ''; break; }
-        let json;
-        try {
-          json = JSON.parse(payload);
-        } catch {
-          continue; // skip a partial/garbled SSE frame rather than crash
-        }
-        const delta = json?.choices?.[0]?.delta?.content;
-        if (typeof delta === 'string' && delta.length) {
-          full += delta;
-          safeSend('ai-chat-chunk', { requestId, delta });
-        }
+        if (handleLine(line)) { buffer = ''; break; }
       }
     }
+    // A final frame may arrive without a trailing newline; don't drop it.
+    buffer += decoder.decode();
+    if (buffer) handleLine(buffer);
 
     safeSend('ai-chat-done', { requestId, text: full });
   } catch (err) {
